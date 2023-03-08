@@ -2,12 +2,13 @@ package jsoniter
 
 import (
 	"fmt"
-	"github.com/modern-go/reflect2"
 	"reflect"
 	"sort"
 	"strings"
 	"unicode"
 	"unsafe"
+
+	"github.com/modern-go/reflect2"
 )
 
 var typeDecoders = map[string]ValDecoder{}
@@ -383,10 +384,19 @@ func describeStruct(ctx *ctx, typ reflect2.Type) *StructDescriptor {
 		if encoder == nil {
 			encoder = encoderOfType(ctx.append(field.Name()), field.Type())
 		}
+
+		fromNames, toNames := fieldNames, fieldNames
+		if ctx.fieldNameDecoder != nil {
+			fromNames = mutateFieldNames(fromNames, ctx.fieldNameDecoder.Decode)
+		}
+		if ctx.fieldNameEncoder != nil {
+			toNames = mutateFieldNames(toNames, ctx.fieldNameEncoder.Encode)
+		}
+
 		binding := &Binding{
 			Field:     field,
-			FromNames: fieldNames,
-			ToNames:   fieldNames,
+			FromNames: fromNames,
+			ToNames:   toNames,
 			Decoder:   decoder,
 			Encoder:   encoder,
 		}
@@ -395,6 +405,15 @@ func describeStruct(ctx *ctx, typ reflect2.Type) *StructDescriptor {
 	}
 	return createStructDescriptor(ctx, typ, bindings, embeddedBindings)
 }
+
+func mutateFieldNames(originNames []string, mutateFunc func(string) string) []string {
+	var arr = make([]string, len(originNames))
+	for i, name := range originNames {
+		arr[i] = mutateFunc(name)
+	}
+	return arr
+}
+
 func createStructDescriptor(ctx *ctx, typ reflect2.Type, bindings []*Binding, embeddedBindings []*Binding) *StructDescriptor {
 	structDescriptor := &StructDescriptor{
 		Type:   typ,

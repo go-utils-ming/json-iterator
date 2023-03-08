@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"io"
 	"reflect"
+	"strings"
 	"sync"
 	"unsafe"
 
@@ -25,6 +26,7 @@ type Config struct {
 	ValidateJsonRawMessage        bool
 	ObjectFieldMustBeSimpleString bool
 	CaseSensitive                 bool
+	EncodeFieldNameToUpper        bool
 }
 
 // API the public interface of this package.
@@ -80,6 +82,35 @@ type frozenConfig struct {
 	streamPool                    *sync.Pool
 	iteratorPool                  *sync.Pool
 	caseSensitive                 bool
+	fieldNameEncoder              FieldNameEncoder
+	fieldNameDecoder              FieldNameDecoder
+}
+
+type fieldEncoderDecoder struct {
+	encoder func(string) string
+	decoder func(string) string
+}
+
+func (f *fieldEncoderDecoder) Encode(str string) string {
+	if f.encoder != nil {
+		return f.encoder(str)
+	}
+	return ""
+}
+
+func (f *fieldEncoderDecoder) Decode(str string) string {
+	if f.decoder != nil {
+		return f.decoder(str)
+	}
+	return ""
+}
+
+type FieldNameEncoder interface {
+	Encode(string) string
+}
+
+type FieldNameDecoder interface {
+	Decode(string) string
 }
 
 func (cfg *frozenConfig) initCache() {
@@ -160,10 +191,36 @@ func (cfg Config) Froze() API {
 	if cfg.ValidateJsonRawMessage {
 		api.validateJsonRawMessage(encoderExtension)
 	}
+
+	if cfg.EncodeFieldNameToUpper {
+		var fieldExt = &fieldEncoderDecoder{
+			encoder: firstUpper,
+			decoder: firstLower,
+		}
+		api.fieldNameDecoder = fieldExt
+		api.fieldNameEncoder = fieldExt
+	}
+
 	api.encoderExtension = encoderExtension
 	api.decoderExtension = decoderExtension
 	api.configBeforeFrozen = cfg
 	return api
+}
+
+// firstUpper given string
+func firstUpper(s string) string {
+	if s == "" {
+		return ""
+	}
+	return strings.ToUpper(s[:1]) + s[1:]
+}
+
+// firstLower given string
+func firstLower(s string) string {
+	if s == "" {
+		return ""
+	}
+	return strings.ToLower(s[:1]) + s[1:]
 }
 
 func (cfg Config) frozeWithCacheReuse(extraExtensions []Extension) *frozenConfig {
